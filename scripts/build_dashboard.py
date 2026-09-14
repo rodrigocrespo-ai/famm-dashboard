@@ -1,40 +1,46 @@
 """
 FAMM - Dashboard de Gastos e Ingresos
 --------------------------------------
-Jala datos de la hoja "Monitoreo FAMM" en Google Drive, agrega:
-  - Gastos por PROYECTO (hoja de Egresos)
-  - Ingresos por Fuente de Ingreso (hoja de Ingresos)
-y genera un dashboard.html estático (Chart.js) listo para publicar
+Jala el archivo "Monitoreo FAMM 2026.xlsx" de Google Drive (es un Excel
+real, no una Hoja de Google nativa -- por eso se descarga y se lee con
+openpyxl, en vez de usar la API de Google Sheets), agrega:
+  - Gastos por PROYECTO (hoja "Egreso")
+  - Ingresos por Fuente de Ingreso (hoja "Ingreso")
+y genera un dashboard.html estatico (Chart.js) listo para publicar
 en GitHub Pages.
 
 SOLO jala las columnas necesarias (lista blanca) -- nunca RFC, nombres
 de proveedores/clientes, folios fiscales, ni cualquier otro dato
-sensible, aunque existan en la hoja original.
+sensible, aunque existan en el Excel.
 
 Requiere:
-  - Una service account de Google con acceso de LECTURA al spreadsheet
+  - Una service account de Google con acceso de LECTURA al archivo
   - Variable de entorno GOOGLE_SERVICE_ACCOUNT_JSON (contenido del
     JSON de credenciales, como secret en GitHub Actions)
   - Variable de entorno SPREADSHEET_ID
 """
 
 import os
+import io
 import json
 import datetime
-import gspread
+import openpyxl
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
 
 # ---------------------------------------------------------------------
 # CONFIG -- AJUSTAR con los nombres reales de las pestañas del Excel
 # ---------------------------------------------------------------------
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 
-SHEET_EGRESOS = "Egreso"     # TODO: confirmar nombre exacto de la pestaña
-SHEET_INGRESOS = "Ingreso"   # TODO: confirmar nombre exacto de la pestaña
+SHEET_EGRESOS = "Egreso"
+SHEET_INGRESOS = "Ingreso"
 
-# Lista blanca de columnas que SI se jalan de cada hoja.
-# Todo lo demas (RFC, Proveedor, Cliente, Folio Fiscal, UUID CFDI,
-# datos de contacto, notas, etc.) se ignora aunque exista en el Excel.
+# Lista blanca de columnas que SI se jalan de cada hoja (por encabezado,
+# tal como aparece en la fila 1 del Excel). Todo lo demas (RFC,
+# Proveedor, Cliente, Folio Fiscal, UUID CFDI, datos de contacto,
+# notas, etc.) se ignora aunque exista en el Excel.
 EGRESOS_COLUMNAS = {
     "proyecto": "PROYECTO",
     "tema": "TEMA",
@@ -54,18 +60,29 @@ INGRESOS_COLUMNAS = {
     "estatus": "Estatus",
 }
 
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly",
-          "https://www.googleapis.com/auth/drive.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 
-def get_client():
+def get_drive_service():
     creds_json = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
     creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
-    return gspread.authorize(creds)
+    return build("drive", "v3", credentials=creds)
+
+
+def descargar_excel(service):
+    """Descarga el .xlsx original de Drive a memoria (bytes)."""
+    request = service.files().get_media(fileId=SPREADSHEET_ID)
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    buffer.seek(0)
+    return buffer
 
 
 def parse_monto(valor):
-    """Convierte '$1,234.56' -> 1234.56 (float). Devuelve 0.0 si no aplica."""
+    """Convierte '$1,234.56' o 1234.56 -> 1234.56 (float). 0.0 si no aplica."""
     if valor is None:
         return 0.0
     if isinstance(valor, (int, float)):
@@ -80,13 +97,24 @@ def parse_monto(valor):
 
 
 def extraer_filtrado(hoja, mapa_columnas):
-    """Lee una hoja y regresa solo las columnas en mapa_columnas (lista blanca)."""
-    registros = hoja.get_all_records()
+    """Lee una hoja de openpyxl y regresa solo las columnas en mapa_columnas
+    (lista blanca), usando la fila 1 como encabezados."""
+    filas_iter = hoja.iter_rows(values_only=True)
+    encabezados = next(filas_iter)
+    indice_columna = {}
+    for idx, nombre in enumerate(encabezados):
+        if nombre is None:
+            continue
+        indice_columna[str(nombre).strip()] = idx
+
     filas = []
-    for r in registros:
+    for row in filas_iter:
+        if row is None or all(v is None for v in row):
+            continue
         fila = {}
         for clave, nombre_columna in mapa_columnas.items():
-            fila[clave] = r.get(nombre_columna, "")
+            idx = indice_columna.get(nombre_columna)
+            fila[clave] = row[idx] if idx is not None and idx < len(row) else ""
         filas.append(fila)
     return filas
 
@@ -95,7 +123,7 @@ def agregar_por_categoria(filas, campo_categoria):
     """Suma 'total' agrupado por el campo indicado (proyecto o fuente)."""
     totales = {}
     for f in filas:
-        categoria = (f.get(campo_categoria) or "Sin clasificar").strip() or "Sin clasificar"
+        categoria = str(f.get(campo_categoria) or "Sin clasificar").strip() or "Sin clasificar"
         totales[categoria] = totales.get(categoria, 0.0) + parse_monto(f.get("total"))
     return dict(sorted(totales.items(), key=lambda x: x[1], reverse=True))
 
@@ -174,11 +202,13 @@ new Chart(document.getElementById('ingresosChart'), {{
 
 
 def main():
-    gc = get_client()
-    sh = gc.open_by_key(SPREADSHEET_ID)
+    service = get_drive_service()
+    excel_bytes = descargar_excel(service)
 
-    hoja_egresos = sh.worksheet(SHEET_EGRESOS)
-    hoja_ingresos = sh.worksheet(SHEET_INGRESOS)
+    wb = openpyxl.load_workbook(excel_bytes, data_only=True, read_only=True)
+
+    hoja_egresos = wb[SHEET_EGRESOS]
+    hoja_ingresos = wb[SHEET_INGRESOS]
 
     egresos = extraer_filtrado(hoja_egresos, EGRESOS_COLUMNAS)
     ingresos = extraer_filtrado(hoja_ingresos, INGRESOS_COLUMNAS)
