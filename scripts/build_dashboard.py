@@ -58,6 +58,7 @@ INGRESOS_COLUMNAS = {
     "fecha": "Fecha Pago",
     "total": "Total",
     "estatus": "Estatus",
+    "cliente": "Cliente",
 }
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
@@ -267,8 +268,7 @@ def main():
             detalle = [
                 {
                     "fecha": f["fecha_txt"],
-                    "concepto": f["_categoria_raw"],
-                    "estatus": str(f.get("estatus") or ""),
+                    "donante": str(f.get("cliente") or "").strip(),
                     "monto": f["monto"],
                 }
                 for f in sorted(filas_tarjeta, key=lambda x: (x["mes"] or 0))
@@ -331,9 +331,9 @@ def generar_html(data, fecha_actualizacion):
   canvas {{ max-height: 420px; }}
   .anios-check {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }}
   .anios-check label {{ font-size: 14px; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }}
-  th, td {{ text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }}
-  th {{ color: #666; font-size: 12px; text-transform: uppercase; }}
+  table {{ width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }}
+  th, td {{ text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }}
+  th {{ color: #666; font-size: 11px; text-transform: uppercase; }}
   .volver {{ background: none; border: none; color: #2563eb; font-size: 14px; cursor: pointer; padding: 0;
              margin-bottom: 16px; }}
 </style>
@@ -386,9 +386,7 @@ def generar_html(data, fecha_actualizacion):
     <canvas id="detalleChart"></canvas>
   </div>
   <table id="detalleTabla">
-    <thead>
-      <tr><th>Fecha</th><th>Concepto</th><th>Estatus</th><th>Monto</th></tr>
-    </thead>
+    <thead id="detalleTablaHead"></thead>
     <tbody id="detalleTablaBody"></tbody>
   </table>
 </div>
@@ -502,11 +500,19 @@ function mostrarDetalle(tarjeta, anio) {{
   }});
 
   const detalle = (DATA.detalle_por_card[tarjeta] && DATA.detalle_por_card[tarjeta][anio]) || [];
+  const conDonante = tarjeta !== 'rendimientos';
+  const thead = document.getElementById('detalleTablaHead');
+  thead.innerHTML = conDonante
+    ? '<tr><th>Fecha</th><th>Donante</th><th>Monto</th></tr>'
+    : '<tr><th>Fecha</th><th>Monto</th></tr>';
+
   const tbody = document.getElementById('detalleTablaBody');
   tbody.innerHTML = '';
   detalle.forEach(row => {{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${{row.fecha || ''}}</td><td>${{row.concepto || ''}}</td><td>${{row.estatus || ''}}</td><td>${{fmt(row.monto)}}</td>`;
+    tr.innerHTML = conDonante
+      ? `<td>${{row.fecha || ''}}</td><td>${{row.donante || ''}}</td><td>${{fmt(row.monto)}}</td>`
+      : `<td>${{row.fecha || ''}}</td><td>${{fmt(row.monto)}}</td>`;
     tbody.appendChild(tr);
   }});
 }}
