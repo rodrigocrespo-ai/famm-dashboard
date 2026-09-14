@@ -29,8 +29,8 @@ from google.oauth2.service_account import Credentials
 # ---------------------------------------------------------------------
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 
-SHEET_EGRESOS = "Egresos"     # TODO: confirmar nombre exacto de la pestaña
-SHEET_INGRESOS = "Ingresos"   # TODO: confirmar nombre exacto de la pestaña
+SHEET_EGRESOS = "Egreso"     # TODO: confirmar nombre exacto de la pestaña
+SHEET_INGRESOS = "Ingreso"   # TODO: confirmar nombre exacto de la pestaña
 
 # Lista blanca de columnas que SI se jalan de cada hoja.
 # Todo lo demas (RFC, Proveedor, Cliente, Folio Fiscal, UUID CFDI,
