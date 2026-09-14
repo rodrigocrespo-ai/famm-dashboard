@@ -331,9 +331,10 @@ def generar_html(data, fecha_actualizacion):
   canvas {{ max-height: 420px; }}
   .anios-check {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }}
   .anios-check label {{ font-size: 14px; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }}
-  th, td {{ text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }}
-  th {{ color: #666; font-size: 11px; text-transform: uppercase; }}
+  table {{ width: auto; min-width: 320px; border-collapse: collapse; margin-top: 16px; font-size: 15px; }}
+  th, td {{ text-align: left; padding: 6px 24px 6px 0; border-bottom: 1px solid #eee; }}
+  th:last-child, td:last-child {{ padding-right: 0; }}
+  th {{ color: #666; font-size: 12px; text-transform: uppercase; }}
   .volver {{ background: none; border: none; color: #2563eb; font-size: 14px; cursor: pointer; padding: 0;
              margin-bottom: 16px; }}
 </style>
