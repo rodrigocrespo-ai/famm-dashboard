@@ -18,7 +18,7 @@ Jala "Monitoreo FAMM 2026.xlsx" de Google Drive y genera dashboard.html:
 Requiere:
   - Service account de Google con acceso de LECTURA al archivo
   - GOOGLE_SERVICE_ACCOUNT_JSON (secret en GitHub Actions)
-  - SPREADSHEET_ID
+  - SPREADSHEET_IDS (lista de IDs de archivo separados por coma -- uno por año)
 """
 
 import os
@@ -30,7 +30,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
+SPREADSHEET_IDS = [s.strip() for s in os.environ["SPREADSHEET_IDS"].split(",") if s.strip()]
 
 SHEET_EGRESOS = "Egreso"
 SHEET_INGRESOS = "Ingreso"
@@ -81,8 +81,8 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-def descargar_excel(service):
-    request = service.files().get_media(fileId=SPREADSHEET_ID)
+def descargar_excel(service, file_id):
+    request = service.files().get_media(fileId=file_id)
     buffer = io.BytesIO()
     downloader = MediaIoBaseDownload(buffer, request)
     done = False
@@ -193,11 +193,14 @@ def truncar_futuro(valores, anio, hoy):
 
 def main():
     service = get_drive_service()
-    excel_bytes = descargar_excel(service)
-    wb = openpyxl.load_workbook(excel_bytes, data_only=True, read_only=True)
 
-    egresos_raw = extraer_filtrado(wb[SHEET_EGRESOS], EGRESOS_COLUMNAS)
-    ingresos_raw = extraer_filtrado(wb[SHEET_INGRESOS], INGRESOS_COLUMNAS)
+    egresos_raw = []
+    ingresos_raw = []
+    for file_id in SPREADSHEET_IDS:
+        excel_bytes = descargar_excel(service, file_id)
+        wb = openpyxl.load_workbook(excel_bytes, data_only=True, read_only=True)
+        egresos_raw.extend(extraer_filtrado(wb[SHEET_EGRESOS], EGRESOS_COLUMNAS))
+        ingresos_raw.extend(extraer_filtrado(wb[SHEET_INGRESOS], INGRESOS_COLUMNAS))
 
     egresos = [f for f in egresos_raw if str(f.get("tema", "")).strip() != TEMA_TRASPASO]
     ingresos = [f for f in ingresos_raw if str(f.get("tipo", "")).strip() != TIPO_INGRESO_TRASPASO]
