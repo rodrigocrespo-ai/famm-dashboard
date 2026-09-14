@@ -1,15 +1,19 @@
 """
-FAMM - Dashboard de Gastos e Ingresos (v2)
+FAMM - Dashboard de Gastos e Ingresos (v3)
 --------------------------------------------
 Jala el archivo "Monitoreo FAMM 2026.xlsx" de Google Drive y genera un
 dashboard.html con:
   - Selector de año (compara meses entre distintos años)
-  - Gastos por proyecto (excluye traspasos entre cuentas; proyectos que
-    individualmente pesan menos del 2% se agrupan en "Otros")
+  - Comparativo mensual: NO dibuja meses futuros del año en curso
+    (para no confundir "sin dato todavia" con "cero real")
+  - Gastos por proyecto: excluye traspasos entre cuentas; agrupa
+    proyectos chicos en "Otros" de forma que "Otros" SIEMPRE quede
+    como la barra mas chica (nunca la mas grande)
+  - Ingresos por categoria: Compensaciones / Rendimientos / cada
+    proyecto por su nombre real (segun columna "Programa / Proyecto");
+    excluye traspasos puros entre cuentas
   - Ingresos: dos tarjetas -- Compensaciones Ambientales vs
-    Asociados y Proyectos (segun columna "Programa / Proyecto")
-  - Ingresos por fuente (excluye traspasos entre cuentas)
-  - Comparativo mensual de Ingresos y Gastos, una linea por año
+    Asociados y Proyectos
 
 SOLO jala columnas de una lista blanca -- nunca RFC, nombres de
 proveedores/clientes, folios fiscales, ni cualquier otro dato sensible,
@@ -35,10 +39,12 @@ SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 SHEET_EGRESOS = "Egreso"
 SHEET_INGRESOS = "Ingreso"
 
-UMBRAL_OTROS = 0.02  # proyectos con menos del 2% del total se agrupan en "Otros"
 TEMA_TRASPASO = "9 Traspaso entre cuentas"
 TIPO_INGRESO_TRASPASO = "Traspaso entre cuentas"
+PROGRAMA_TRASPASO = "Traspaso entre cuentas"
 PROGRAMA_COMPENSACION = "Compensación"
+PROGRAMA_COMPENSACION_LABEL = "Compensaciones"
+PROGRAMA_RENDIMIENTOS = "Rendimientos"
 
 # Lista blanca de columnas (por encabezado exacto en la fila 1 del Excel).
 EGRESOS_COLUMNAS = {
@@ -137,21 +143,36 @@ def extraer_filtrado(hoja, mapa_columnas):
     return filas
 
 
-def aplicar_umbral_otros(totales, umbral=UMBRAL_OTROS):
-    """Agrupa categorias que pesan menos de `umbral` del total en 'Otros'."""
-    total_general = sum(totales.values())
-    if total_general == 0:
-        return totales
-    principales = {}
-    otros = 0.0
-    for categoria, monto in totales.items():
-        if monto / total_general < umbral:
-            otros += monto
-        else:
-            principales[categoria] = monto
-    if otros > 0:
-        principales["Otros"] = otros
-    return dict(sorted(principales.items(), key=lambda x: x[1], reverse=True))
+def agrupar_otros_mas_chico(totales):
+    """Agrupa las categorias mas pequeñas en 'Otros', garantizando que
+    'Otros' quede como la barra MAS CHICA del grupo (nunca la mas grande).
+    Encuentra el numero minimo de categorias principales necesario para
+    que la suma de las restantes (agrupadas en Otros) sea menor que la
+    categoria principal mas chica que se conserve."""
+    items = sorted(totales.items(), key=lambda x: x[1], reverse=True)
+    n = len(items)
+    if n == 0:
+        return {}
+
+    for k in range(1, n + 1):
+        if k == n:
+            principales = items
+            otros_sum = 0.0
+            break
+        cola_sum = sum(v for _, v in items[k:])
+        valor_minimo_principal = items[k - 1][1]
+        if cola_sum < valor_minimo_principal:
+            principales = items[:k]
+            otros_sum = cola_sum
+            break
+    else:
+        principales = items
+        otros_sum = 0.0
+
+    resultado = dict(principales)
+    if otros_sum > 0:
+        resultado["Otros"] = otros_sum
+    return dict(sorted(resultado.items(), key=lambda x: x[1], reverse=True))
 
 
 def main():
@@ -168,8 +189,10 @@ def main():
 
     anios = sorted({f["anio"] for f in egresos + ingresos if f["anio"]}, reverse=True)
 
+    hoy = datetime.datetime.now()
+
     gastos_por_proyecto_anio = {}
-    ingresos_por_fuente_anio = {}
+    ingresos_por_categoria_anio = {}
     ingresos_compensacion_anio = {}
     ingresos_asociados_anio = {}
     monthly_ingresos = {}
@@ -179,19 +202,22 @@ def main():
         egresos_anio = [f for f in egresos if f["anio"] == anio]
         ingresos_anio = [f for f in ingresos if f["anio"] == anio]
 
-        # Gastos por proyecto, con umbral de "Otros"
+        # Gastos por proyecto, con "Otros" garantizado como la barra mas chica
         totales_proyecto = {}
         for f in egresos_anio:
             proyecto = str(f.get("proyecto") or "Sin clasificar").strip() or "Sin clasificar"
             totales_proyecto[proyecto] = totales_proyecto.get(proyecto, 0.0) + f["monto"]
-        gastos_por_proyecto_anio[anio] = aplicar_umbral_otros(totales_proyecto)
+        gastos_por_proyecto_anio[anio] = agrupar_otros_mas_chico(totales_proyecto)
 
-        # Ingresos por fuente
-        totales_fuente = {}
+        # Ingresos por categoria: Compensaciones / Rendimientos / proyecto real
+        totales_categoria = {}
         for f in ingresos_anio:
-            fuente = str(f.get("fuente") or "Sin clasificar").strip() or "Sin clasificar"
-            totales_fuente[fuente] = totales_fuente.get(fuente, 0.0) + f["monto"]
-        ingresos_por_fuente_anio[anio] = dict(sorted(totales_fuente.items(), key=lambda x: x[1], reverse=True))
+            cat_raw = str(f.get("programa_proyecto") or "").strip()
+            if cat_raw == PROGRAMA_TRASPASO or cat_raw == "":
+                continue
+            label = PROGRAMA_COMPENSACION_LABEL if cat_raw == PROGRAMA_COMPENSACION else cat_raw
+            totales_categoria[label] = totales_categoria.get(label, 0.0) + f["monto"]
+        ingresos_por_categoria_anio[anio] = dict(sorted(totales_categoria.items(), key=lambda x: x[1], reverse=True))
 
         # Ingresos: Compensaciones Ambientales vs Asociados y Proyectos
         comp = sum(f["monto"] for f in ingresos_anio
@@ -201,7 +227,7 @@ def main():
         ingresos_compensacion_anio[anio] = comp
         ingresos_asociados_anio[anio] = asoc
 
-        # Comparativo mensual
+        # Comparativo mensual -- trunca meses futuros del año en curso
         meses_ingresos = [0.0] * 12
         meses_gastos = [0.0] * 12
         for f in ingresos_anio:
@@ -210,15 +236,24 @@ def main():
         for f in egresos_anio:
             if f["mes"]:
                 meses_gastos[f["mes"] - 1] += f["monto"]
+
+        if anio == hoy.year:
+            for idx in range(hoy.month, 12):  # meses despues del actual (0-indexado)
+                meses_ingresos[idx] = None
+                meses_gastos[idx] = None
+        elif anio > hoy.year:
+            meses_ingresos = [None] * 12
+            meses_gastos = [None] * 12
+
         monthly_ingresos[anio] = meses_ingresos
         monthly_gastos[anio] = meses_gastos
 
-    fecha_actualizacion = datetime.datetime.now().strftime("%d %b %Y, %H:%M")
+    fecha_actualizacion = hoy.strftime("%d %b %Y, %H:%M")
 
     data_js = {
         "anios": anios,
         "gastos_por_proyecto": gastos_por_proyecto_anio,
-        "ingresos_por_fuente": ingresos_por_fuente_anio,
+        "ingresos_por_categoria": ingresos_por_categoria_anio,
         "ingresos_compensacion": ingresos_compensacion_anio,
         "ingresos_asociados": ingresos_asociados_anio,
         "monthly_ingresos": monthly_ingresos,
@@ -296,7 +331,7 @@ def generar_html(data, fecha_actualizacion):
       <canvas id="gastosChart"></canvas>
     </div>
     <div class="chart-box">
-      <h3>Ingresos por fuente</h3>
+      <h3>Ingresos por categoría</h3>
       <canvas id="ingresosChart"></canvas>
     </div>
   </div>
@@ -321,7 +356,7 @@ let gastosChart, ingresosChart, mensualChart;
 
 function renderAnio(anio) {{
   const gastos = DATA.gastos_por_proyecto[anio] || {{}};
-  const ingresos = DATA.ingresos_por_fuente[anio] || {{}};
+  const ingresos = DATA.ingresos_por_categoria[anio] || {{}};
   const totalGastos = Object.values(gastos).reduce((a,b) => a+b, 0);
   const totalIngresos = Object.values(ingresos).reduce((a,b) => a+b, 0);
 
@@ -350,9 +385,10 @@ function renderMensual(tipo) {{
   const fuente = tipo === 'ingresos' ? DATA.monthly_ingresos : DATA.monthly_gastos;
   const datasets = DATA.anios.map((anio, i) => ({{
     label: String(anio),
-    data: fuente[anio] || Array(12).fill(0),
+    data: fuente[anio] || Array(12).fill(null),
     borderColor: coloresLinea[i % coloresLinea.length],
     backgroundColor: 'transparent',
+    spanGaps: false,
     tension: 0.2
   }}));
 
