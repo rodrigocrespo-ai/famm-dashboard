@@ -1,0 +1,26 @@
+name: Respaldo mensual (dia 15)
+
+on:
+  schedule:
+    - cron: "0 13 15 * *"   # dia 15 de cada mes, 07:00 hora Monterrey
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Crear respaldo con fecha
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          BACKUP_FOLDER_ID: ${{ secrets.BACKUP_FOLDER_ID }}
+        run: python scripts/backup_mensual.py
