@@ -2,8 +2,8 @@ name: Actualizar dashboard diario
 
 on:
   schedule:
-    - cron: "0 13 * * *"   # 07:00 hora Monterrey (UTC-6) todos los dias
-  workflow_dispatch: {}     # permite correrlo manualmente desde GitHub
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
       - name: Generar dashboard
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SPREADSHEET_IDS: ${{ secrets.SPREADSHEET_IDS }}
         run: python scripts/build_dashboard.py
 
       - name: Publicar en GitHub Pages
