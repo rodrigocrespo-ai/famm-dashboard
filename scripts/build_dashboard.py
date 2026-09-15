@@ -93,6 +93,7 @@ CONCEPTO_CATEGORIAS = [
     "Evento Diálogos con el Agua / Asamblea",
     "Estudios y documentos técnicos",
     "Oficina/operación",
+    "Insumos",
     "Adquisición de equipos",
     "Otros",
 ]
@@ -104,6 +105,8 @@ def clasificar_concepto(texto):
         return "Sueldos y salarios"
     if "equipo de cómputo" in t or "equipo de computo" in t or "papeler" in t or "cuaderno" in t:
         return "Oficina/operación"
+    if "insumo" in t or "material" in t or "consumible" in t:
+        return "Insumos"
     if "libro blanco" in t or "análisis de propuestas" in t or "analisis de propuestas" in t or "estudio" in t:
         return "Estudios y documentos técnicos"
     if any(kw in t for kw in ["evento", "asamblea", "diálogo", "dialogo", "hotel", "audiovisual",
@@ -480,7 +483,7 @@ Chart.defaults.plugins.legend.labels.boxWidth = 14;
 
 const ECONOMIST_ROJO = '#e3120b';
 const ECONOMIST_AZUL = '#006ba2';
-const coloresLinea = ['#e3120b', '#01295f', '#f2909a', '#8fbfe0', '#758d99', '#a2b1b8'];
+const coloresLinea = ['#e3120b', '#01295f', '#f2909a', '#8fbfe0', '#758d99', '#a2b1b8', '#4d5b61'];
 
 function fmt(n) {{
   return '$' + n.toLocaleString('es-MX', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
