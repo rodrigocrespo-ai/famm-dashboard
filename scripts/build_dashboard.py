@@ -23,6 +23,7 @@ Requiere:
 
 import os
 import io
+import re
 import json
 import datetime
 import openpyxl
@@ -123,8 +124,10 @@ def clasificar_concepto(texto):
     if any(kw in t for kw in ["servicio", "honorario", "consultor", "asesor", "análisis de propuestas",
                                 "analisis de propuestas", "evaluación", "evaluacion"]):
         return "Servicios profesionales"
-    if any(kw in t for kw in ["hectárea", "hectarea", " ha.", "obras de reforestación", "obras de reforestacion",
+    if any(kw in t for kw in ["hectárea", "hectarea", "obras de reforestación", "obras de reforestacion",
                                 "obras de suelos", "plantación", "plantacion", "mantenimiento", "implementación", "implementacion"]):
+        return "Implementadores"
+    if re.search(r'\bha\b', t):
         return "Implementadores"
     if any(kw in t for kw in ["libro blanco", "estudio", "análisis de política", "analisis de politica",
                                 "análisis de zonas", "analisis de zonas"]):
@@ -351,6 +354,16 @@ def main():
             ]
             detalle_por_card[tarjeta][anio] = detalle
 
+        # "Resto" = todo lo que no es Compensaciones (Asociados + Proyectos + Rendimientos)
+        resto_mensual = []
+        for i in range(12):
+            valores = [monthly_por_card[t][anio][i] for t in ("asociados", "proyectos", "rendimientos")]
+            if any(v is None for v in valores):
+                resto_mensual.append(None)
+            else:
+                resto_mensual.append(sum(valores))
+        monthly_por_card.setdefault("resto", {})[anio] = resto_mensual
+
     fecha_actualizacion = hoy.strftime("%d %b %Y, %H:%M")
 
     data_js = {
@@ -452,6 +465,17 @@ def generar_html(data, fecha_actualizacion):
 
   <div class="charts">
     <div class="chart-box">
+      <h3>Ingresos: Compensaciones por mes</h3>
+      <canvas id="mensualCompensacionesChart"></canvas>
+    </div>
+    <div class="chart-box">
+      <h3>Ingresos: Asociados + Proyectos + Rendimientos por mes</h3>
+      <canvas id="mensualRestoChart"></canvas>
+    </div>
+  </div>
+
+  <div class="charts">
+    <div class="chart-box">
       <h3>Gastos por proyecto</h3>
       <canvas id="gastosChart"></canvas>
     </div>
@@ -533,6 +557,7 @@ DATA.anios.forEach((a, i) => {{
 }});
 
 let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart, detalleGastoPieChart;
+let mensualCompensacionesChart, mensualRestoChart;
 let tipoMensualActual = 'ingresos';
 
 function renderAnio(anio) {{
@@ -576,6 +601,23 @@ function renderAnio(anio) {{
     type: 'bar',
     data: {{ labels: Object.keys(ingresos), datasets: [{{ label: 'Ingreso (MXN)', data: Object.values(ingresos), backgroundColor: ECONOMIST_AZUL }}] }},
     options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
+  }});
+
+  const mesesComp = (DATA.monthly_por_card.compensaciones && DATA.monthly_por_card.compensaciones[anio]) || Array(12).fill(null);
+  const mesesResto = (DATA.monthly_por_card.resto && DATA.monthly_por_card.resto[anio]) || Array(12).fill(null);
+
+  if (mensualCompensacionesChart) mensualCompensacionesChart.destroy();
+  mensualCompensacionesChart = new Chart(document.getElementById('mensualCompensacionesChart'), {{
+    type: 'bar',
+    data: {{ labels: DATA.meses_es, datasets: [{{ data: mesesComp, backgroundColor: ECONOMIST_AZUL }}] }},
+    options: {{ plugins: {{ legend: {{ display: false }} }} }}
+  }});
+
+  if (mensualRestoChart) mensualRestoChart.destroy();
+  mensualRestoChart = new Chart(document.getElementById('mensualRestoChart'), {{
+    type: 'bar',
+    data: {{ labels: DATA.meses_es, datasets: [{{ data: mesesResto, backgroundColor: '#8fbfe0' }}] }},
+    options: {{ plugins: {{ legend: {{ display: false }} }} }}
   }});
 }}
 
