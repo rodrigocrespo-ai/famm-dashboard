@@ -536,4 +536,88 @@ function mostrarDetalle(tarjeta, anio) {{
   if (detalleChart) detalleChart.destroy();
   detalleChart = new Chart(document.getElementById('detalleChart'), {{
     type: 'line',
-    
+    data: {{ labels: DATA.meses_es, datasets: [{{ label: DATA.cards_labels[tarjeta], data: mensual,
+             borderColor: ECONOMIST_AZUL, backgroundColor: 'rgba(0,107,162,.12)', fill: true, spanGaps: false, tension: 0.2 }}] }},
+    options: {{ plugins: {{ legend: {{ display: false }} }} }}
+  }});
+
+  const detalle = (DATA.detalle_por_card[tarjeta] && DATA.detalle_por_card[tarjeta][anio]) || [];
+  const conDonante = tarjeta !== 'rendimientos';
+  const thead = document.getElementById('detalleTablaHead');
+  thead.innerHTML = conDonante
+    ? '<tr><th>Fecha</th><th>Donante</th><th>Monto</th></tr>'
+    : '<tr><th>Fecha</th><th>Monto</th></tr>';
+
+  const tbody = document.getElementById('detalleTablaBody');
+  tbody.innerHTML = '';
+  detalle.forEach(row => {{
+    const tr = document.createElement('tr');
+    tr.innerHTML = conDonante
+      ? `<td>${{row.fecha || ''}}</td><td>${{row.donante || ''}}</td><td>${{fmt(row.monto)}}</td>`
+      : `<td>${{row.fecha || ''}}</td><td>${{fmt(row.monto)}}</td>`;
+    tbody.appendChild(tr);
+  }});
+}}
+
+document.getElementById('btnVolver').addEventListener('click', () => {{
+  document.getElementById('vistaDetalle').style.display = 'none';
+  document.getElementById('vistaPrincipal').style.display = 'block';
+}});
+
+function mostrarDetalleGasto(proyecto, anio) {{
+  if (proyecto === 'Otros') {{
+    alert('"Otros" agrupa varios proyectos pequeños -- no tiene un presupuesto individual. Selecciona un proyecto especifico para ver su comparacion.');
+    return;
+  }}
+  document.getElementById('vistaPrincipal').style.display = 'none';
+  document.getElementById('vistaDetalleGasto').style.display = 'block';
+  document.getElementById('detalleGastoTitulo').textContent = proyecto + ' - ' + anio;
+
+  const ejercido = (DATA.gastos_por_proyecto[anio] || {{}})[proyecto] || 0;
+  const presupuestosAnio = DATA.presupuestos[anio] || {{}};
+  const presupuesto = presupuestosAnio[proyecto];
+  const hayPresupuesto = presupuesto !== undefined && presupuesto !== null;
+
+  if (detalleGastoChart) detalleGastoChart.destroy();
+  const labels = hayPresupuesto ? ['Gasto ejercido', 'Presupuesto aprobado'] : ['Gasto ejercido'];
+  const data = hayPresupuesto ? [ejercido, presupuesto] : [ejercido];
+  const colores = hayPresupuesto ? [ECONOMIST_ROJO, ECONOMIST_AZUL] : [ECONOMIST_ROJO];
+  detalleGastoChart = new Chart(document.getElementById('detalleGastoChart'), {{
+    type: 'bar',
+    data: {{ labels: labels, datasets: [{{ data: data, backgroundColor: colores }}] }},
+    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
+  }});
+
+  const resumen = document.getElementById('detalleGastoResumen');
+  if (hayPresupuesto && presupuesto > 0) {{
+    const pct = (ejercido / presupuesto * 100).toFixed(1);
+    resumen.textContent = 'Ejercido: ' + fmt(ejercido) + ' de ' + fmt(presupuesto) + ' presupuestados (' + pct + '% del presupuesto).';
+  }} else {{
+    resumen.textContent = 'Gasto ejercido: ' + fmt(ejercido) + '. Presupuesto aprobado: aun no capturado para este proyecto.';
+  }}
+}}
+
+document.getElementById('btnVolverGasto').addEventListener('click', () => {{
+  document.getElementById('vistaDetalleGasto').style.display = 'none';
+  document.getElementById('vistaPrincipal').style.display = 'block';
+}});
+
+selector.addEventListener('change', () => renderAnio(selector.value));
+document.querySelectorAll('input[name="tipoMensual"]').forEach(r => {{
+  r.addEventListener('change', (e) => renderMensual(e.target.value));
+}});
+
+if (DATA.anios.length > 0) {{
+  selector.value = DATA.anios[0];
+  renderAnio(DATA.anios[0]);
+  renderMensual('ingresos');
+}}
+</script>
+</body>
+</html>
+"""
+    return html
+
+
+if __name__ == "__main__":
+    main()
