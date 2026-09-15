@@ -327,6 +327,7 @@ def generar_html(data, fecha_actualizacion):
 <title>FAMM - Dashboard Financiero</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
 <style>
   body {{ font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; padding: 24px;
          background: #f5f6f7; color: #1a1a1a; }}
@@ -413,8 +414,14 @@ def generar_html(data, fecha_actualizacion):
 <div id="vistaDetalleGasto" style="display:none;">
   <button class="volver" id="btnVolverGasto">&larr; Volver al dashboard</button>
   <h2 id="detalleGastoTitulo"></h2>
-  <div class="chart-box full" style="margin-bottom:16px;">
-    <canvas id="detalleGastoChart"></canvas>
+  <div class="charts">
+    <div class="chart-box" style="flex: 3; min-width: 320px;">
+      <canvas id="detalleGastoChart" style="max-height: 160px;"></canvas>
+    </div>
+    <div class="card" style="flex: 1; min-width: 180px;">
+      <div class="label">% del presupuesto ejercido</div>
+      <div class="valor" id="detalleGastoPct">-</div>
+    </div>
   </div>
   <p id="detalleGastoResumen" style="font-size:15px;"></p>
 </div>
@@ -582,17 +589,35 @@ function mostrarDetalleGasto(proyecto, anio) {{
   const labels = hayPresupuesto ? ['Gasto ejercido', 'Presupuesto aprobado'] : ['Gasto ejercido'];
   const data = hayPresupuesto ? [ejercido, presupuesto] : [ejercido];
   const colores = hayPresupuesto ? [ECONOMIST_ROJO, ECONOMIST_AZUL] : [ECONOMIST_ROJO];
+
+  const anotaciones = {{}};
+  if (hayPresupuesto) {{
+    anotaciones.lineaPresupuesto = {{
+      type: 'line',
+      xMin: presupuesto,
+      xMax: presupuesto,
+      borderColor: '#1a1a1a',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      label: {{ display: true, content: 'Presupuesto máx.', position: 'end',
+                backgroundColor: '#1a1a1a', color: '#fff', font: {{ size: 10 }} }}
+    }};
+  }}
+
   detalleGastoChart = new Chart(document.getElementById('detalleGastoChart'), {{
     type: 'bar',
-    data: {{ labels: labels, datasets: [{{ data: data, backgroundColor: colores }}] }},
-    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
+    data: {{ labels: labels, datasets: [{{ data: data, backgroundColor: colores, barThickness: 22 }}] }},
+    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }}, annotation: {{ annotations: anotaciones }} }} }}
   }});
 
+  const pctBox = document.getElementById('detalleGastoPct');
   const resumen = document.getElementById('detalleGastoResumen');
   if (hayPresupuesto && presupuesto > 0) {{
     const pct = (ejercido / presupuesto * 100).toFixed(1);
-    resumen.textContent = 'Ejercido: ' + fmt(ejercido) + ' de ' + fmt(presupuesto) + ' presupuestados (' + pct + '% del presupuesto).';
+    pctBox.textContent = pct + '%';
+    resumen.textContent = 'Ejercido: ' + fmt(ejercido) + ' de ' + fmt(presupuesto) + ' presupuestados.';
   }} else {{
+    pctBox.textContent = 'N/D';
     resumen.textContent = 'Gasto ejercido: ' + fmt(ejercido) + '. Presupuesto aprobado: aun no capturado para este proyecto.';
   }}
 }}
