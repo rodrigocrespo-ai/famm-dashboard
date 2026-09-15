@@ -239,11 +239,15 @@ def agrupar_otros_mas_chico(totales):
 
 
 def clasificar_tarjeta(cat_raw):
-    if cat_raw == PROGRAMA_COMPENSACION:
+    """Distintos años usan distinta redaccion para la misma categoria
+    (ej. 2026 dice 'Compensación', 2025 dice 'Compensaciones ambientales').
+    Por eso se compara por palabra clave, no por texto exacto."""
+    t = str(cat_raw or "").strip().lower()
+    if "compensaci" in t:
         return "compensaciones"
-    if cat_raw == PROGRAMA_RENDIMIENTOS:
+    if "rendimiento" in t:
         return "rendimientos"
-    if cat_raw == PROGRAMA_ASOCIADOS:
+    if "aportación anual" in t or "aportacion anual" in t or "asociad" in t:
         return "asociados"
     return "proyectos"
 
@@ -322,7 +326,7 @@ def main():
         # Ingresos por categoria (para la grafica de barras: Compensaciones/Rendimientos/proyecto)
         totales_categoria = {}
         for f in ingresos_validos:
-            label = "Compensaciones" if f["_categoria_raw"] == PROGRAMA_COMPENSACION else f["_categoria_raw"]
+            label = "Compensaciones" if "compensaci" in f["_categoria_raw"].lower() else f["_categoria_raw"]
             totales_categoria[label] = totales_categoria.get(label, 0.0) + f["monto"]
         ingresos_por_categoria_anio[anio] = dict(sorted(totales_categoria.items(), key=lambda x: x[1], reverse=True))
 
@@ -456,14 +460,17 @@ def generar_html(data, fecha_actualizacion):
   <div class="charts">
     <div class="chart-box" style="min-width: 300px;">
       <h3>Compensaciones por mes</h3>
+      <div class="anios-check" id="aniosCheckComp"></div>
       <canvas id="mensualCompensacionesChart"></canvas>
     </div>
     <div class="chart-box" style="min-width: 300px;">
       <h3>Cuotas de socios (Asociados) por mes</h3>
+      <div class="anios-check" id="aniosCheckAsoc"></div>
       <canvas id="mensualAsociadosChart"></canvas>
     </div>
     <div class="chart-box" style="min-width: 300px;">
       <h3>Proyectos por mes</h3>
+      <div class="anios-check" id="aniosCheckProy"></div>
       <canvas id="mensualProyectosChart"></canvas>
     </div>
   </div>
@@ -538,17 +545,28 @@ DATA.anios.forEach(a => {{
   selector.appendChild(opt);
 }});
 
-const aniosCheckBox = document.getElementById('aniosCheck');
-DATA.anios.forEach((a, i) => {{
-  const label = document.createElement('label');
-  const cb = document.createElement('input');
-  cb.type = 'checkbox'; cb.checked = true; cb.value = a; cb.className = 'anioCheck';
-  cb.style.accentColor = coloresLinea[i % coloresLinea.length];
-  cb.addEventListener('change', () => renderMensual(tipoMensualActual));
-  label.appendChild(cb);
-  label.appendChild(document.createTextNode(' ' + a));
-  aniosCheckBox.appendChild(label);
-}});
+function crearCheckboxesAnio(containerId, claseCss, onChange) {{
+  const cont = document.getElementById(containerId);
+  DATA.anios.forEach((a, i) => {{
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = true; cb.value = a; cb.className = claseCss;
+    cb.style.accentColor = coloresLinea[i % coloresLinea.length];
+    cb.addEventListener('change', onChange);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + a));
+    cont.appendChild(label);
+  }});
+}}
+
+function aniosActivosDe(claseCss) {{
+  return Array.from(document.querySelectorAll('.' + claseCss + ':checked')).map(cb => cb.value);
+}}
+
+crearCheckboxesAnio('aniosCheck', 'anioCheck', () => renderMensual(tipoMensualActual));
+crearCheckboxesAnio('aniosCheckComp', 'anioCheckComp', () => renderTarjetaCompensaciones());
+crearCheckboxesAnio('aniosCheckAsoc', 'anioCheckAsoc', () => renderTarjetaAsociados());
+crearCheckboxesAnio('aniosCheckProy', 'anioCheckProy', () => renderTarjetaProyectos());
 
 let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart, detalleGastoPieChart;
 let mensualCompensacionesChart, mensualAsociadosChart, mensualProyectosChart;
@@ -598,8 +616,8 @@ function renderAnio(anio) {{
   }});
 }}
 
-function construirDatasetsMultiAnio(fuentePorAnio) {{
-  const aniosActivos = Array.from(document.querySelectorAll('.anioCheck:checked')).map(cb => cb.value);
+function construirDatasetsMultiAnio(fuentePorAnio, claseCss) {{
+  const aniosActivos = aniosActivosDe(claseCss);
   return DATA.anios
     .filter(anio => aniosActivos.includes(String(anio)))
     .map((anio) => {{
@@ -615,7 +633,7 @@ function construirDatasetsMultiAnio(fuentePorAnio) {{
 function renderMensual(tipo) {{
   tipoMensualActual = tipo;
   const fuente = tipo === 'ingresos' ? DATA.monthly_ingresos : DATA.monthly_gastos;
-  const datasets = construirDatasetsMultiAnio(fuente);
+  const datasets = construirDatasetsMultiAnio(fuente, 'anioCheck');
 
   if (mensualChart) mensualChart.destroy();
   mensualChart = new Chart(document.getElementById('mensualChart'), {{
@@ -623,35 +641,31 @@ function renderMensual(tipo) {{
     data: {{ labels: DATA.meses_es, datasets: datasets }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
-
-  renderTarjetasCategoria();
 }}
 
-function renderTarjetasCategoria() {{
-  const tarjetas = [
-    {{ id: 'mensualCompensacionesChart', key: 'compensaciones' }},
-    {{ id: 'mensualAsociadosChart', key: 'asociados' }},
-    {{ id: 'mensualProyectosChart', key: 'proyectos' }},
-  ];
-
+function renderTarjetaCompensaciones() {{
   if (mensualCompensacionesChart) mensualCompensacionesChart.destroy();
   mensualCompensacionesChart = new Chart(document.getElementById('mensualCompensacionesChart'), {{
     type: 'bar',
-    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.compensaciones || {{}}) }},
+    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.compensaciones || {{}}, 'anioCheckComp') }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
+}}
 
+function renderTarjetaAsociados() {{
   if (mensualAsociadosChart) mensualAsociadosChart.destroy();
   mensualAsociadosChart = new Chart(document.getElementById('mensualAsociadosChart'), {{
     type: 'bar',
-    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.asociados || {{}}) }},
+    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.asociados || {{}}, 'anioCheckAsoc') }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
+}}
 
+function renderTarjetaProyectos() {{
   if (mensualProyectosChart) mensualProyectosChart.destroy();
   mensualProyectosChart = new Chart(document.getElementById('mensualProyectosChart'), {{
     type: 'bar',
-    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.proyectos || {{}}) }},
+    data: {{ labels: DATA.meses_es, datasets: construirDatasetsMultiAnio(DATA.monthly_por_card.proyectos || {{}}, 'anioCheckProy') }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
 }}
@@ -799,6 +813,9 @@ if (DATA.anios.length > 0) {{
   selector.value = DATA.anios[0];
   renderAnio(DATA.anios[0]);
   renderMensual('ingresos');
+  renderTarjetaCompensaciones();
+  renderTarjetaAsociados();
+  renderTarjetaProyectos();
 }}
 </script>
 </body>
