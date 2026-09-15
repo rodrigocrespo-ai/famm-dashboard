@@ -42,6 +42,19 @@ PROGRAMA_COMPENSACION = "Compensación"
 PROGRAMA_RENDIMIENTOS = "Rendimientos"
 PROGRAMA_ASOCIADOS = "Aportación anual"
 
+# ---------------------------------------------------------------------
+# PRESUPUESTOS APROBADOS POR PROYECTO -- Rodrigo llena esto directamente.
+# Formato: { año: { "nombre EXACTO del proyecto (como aparece en PROYECTO)": monto } }
+# Un proyecto sin entrada aquí simplemente no muestra comparación de
+# presupuesto (solo el gasto ejercido).
+# ---------------------------------------------------------------------
+PRESUPUESTOS = {
+    # 2026: {
+    #     "2.1.1 Obras de conservación de suelos": 25000000,
+    #     "2.1.2 Reforestación Compensaciones": 22000000,
+    # },
+}
+
 EGRESOS_COLUMNAS = {
     "proyecto": "PROYECTO",
     "tema": "TEMA",
@@ -291,6 +304,7 @@ def main():
         "monthly_por_card": monthly_por_card,
         "detalle_por_card": detalle_por_card,
         "meses_es": MESES_ES,
+        "presupuestos": PRESUPUESTOS,
     }
 
     html = generar_html(data_js, fecha_actualizacion)
@@ -331,6 +345,7 @@ def generar_html(data, fecha_actualizacion):
   .chart-box {{ background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.1);
                 flex: 1; min-width: 320px; }}
   .chart-box.full {{ flex-basis: 100%; }}
+  #chartMensualBox {{ border-top: 4px solid #e3120b; }}
   canvas {{ max-height: 420px; }}
   .anios-check {{ display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }}
   .anios-check label {{ font-size: 14px; }}
@@ -360,7 +375,7 @@ def generar_html(data, fecha_actualizacion):
   <div class="resumen" id="tarjetasIngreso"></div>
 
   <div class="charts">
-    <div class="chart-box full">
+    <div class="chart-box full" id="chartMensualBox">
       <h3>Comparativo mensual</h3>
       <div class="anios-check" id="aniosCheck"></div>
       <div style="margin-bottom:8px;">
@@ -395,10 +410,28 @@ def generar_html(data, fecha_actualizacion):
   </table>
 </div>
 
+<div id="vistaDetalleGasto" style="display:none;">
+  <button class="volver" id="btnVolverGasto">&larr; Volver al dashboard</button>
+  <h2 id="detalleGastoTitulo"></h2>
+  <div class="chart-box full" style="margin-bottom:16px;">
+    <canvas id="detalleGastoChart"></canvas>
+  </div>
+  <p id="detalleGastoResumen" style="font-size:15px;"></p>
+</div>
+
 <script>
 const DATA = {data_json};
 
-const coloresLinea = ['#2563eb', '#c0392b', '#27ae60', '#f39c12', '#8e44ad', '#16a085'];
+Chart.defaults.font.family = "-apple-system, Segoe UI, Arial, sans-serif";
+Chart.defaults.color = '#1a1a1a';
+Chart.defaults.borderColor = '#e3e3e3';
+Chart.defaults.plugins.legend.labels.usePointStyle = false;
+Chart.defaults.plugins.legend.labels.boxWidth = 14;
+
+
+const ECONOMIST_ROJO = '#e3120b';
+const ECONOMIST_AZUL = '#006ba2';
+const coloresLinea = ['#e3120b', '#01295f', '#f2909a', '#8fbfe0', '#758d99', '#a2b1b8'];
 
 function fmt(n) {{
   return '$' + n.toLocaleString('es-MX', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
@@ -423,7 +456,7 @@ DATA.anios.forEach((a, i) => {{
   aniosCheckBox.appendChild(label);
 }});
 
-let gastosChart, ingresosChart, mensualChart, detalleChart;
+let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart;
 let tipoMensualActual = 'ingresos';
 
 function renderAnio(anio) {{
@@ -450,14 +483,22 @@ function renderAnio(anio) {{
   if (gastosChart) gastosChart.destroy();
   gastosChart = new Chart(document.getElementById('gastosChart'), {{
     type: 'bar',
-    data: {{ labels: Object.keys(gastos), datasets: [{{ label: 'Gasto (MXN)', data: Object.values(gastos), backgroundColor: '#c0392b' }}] }},
-    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
+    data: {{ labels: Object.keys(gastos), datasets: [{{ label: 'Gasto (MXN)', data: Object.values(gastos), backgroundColor: ECONOMIST_ROJO }}] }},
+    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }},
+      onClick: (evt, elements) => {{
+        if (elements.length > 0) {{
+          const proyecto = Object.keys(gastos)[elements[0].index];
+          mostrarDetalleGasto(proyecto, anio);
+        }}
+      }}
+    }}
   }});
+  document.getElementById('gastosChart').style.cursor = 'pointer';
 
   if (ingresosChart) ingresosChart.destroy();
   ingresosChart = new Chart(document.getElementById('ingresosChart'), {{
     type: 'bar',
-    data: {{ labels: Object.keys(ingresos), datasets: [{{ label: 'Ingreso (MXN)', data: Object.values(ingresos), backgroundColor: '#27ae60' }}] }},
+    data: {{ labels: Object.keys(ingresos), datasets: [{{ label: 'Ingreso (MXN)', data: Object.values(ingresos), backgroundColor: ECONOMIST_AZUL }}] }},
     options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
   }});
 }}
@@ -495,50 +536,4 @@ function mostrarDetalle(tarjeta, anio) {{
   if (detalleChart) detalleChart.destroy();
   detalleChart = new Chart(document.getElementById('detalleChart'), {{
     type: 'line',
-    data: {{ labels: DATA.meses_es, datasets: [{{ label: DATA.cards_labels[tarjeta], data: mensual,
-             borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,.1)', fill: true, spanGaps: false, tension: 0.2 }}] }},
-    options: {{ plugins: {{ legend: {{ display: false }} }} }}
-  }});
-
-  const detalle = (DATA.detalle_por_card[tarjeta] && DATA.detalle_por_card[tarjeta][anio]) || [];
-  const conDonante = tarjeta !== 'rendimientos';
-  const thead = document.getElementById('detalleTablaHead');
-  thead.innerHTML = conDonante
-    ? '<tr><th>Fecha</th><th>Donante</th><th>Monto</th></tr>'
-    : '<tr><th>Fecha</th><th>Monto</th></tr>';
-
-  const tbody = document.getElementById('detalleTablaBody');
-  tbody.innerHTML = '';
-  detalle.forEach(row => {{
-    const tr = document.createElement('tr');
-    tr.innerHTML = conDonante
-      ? `<td>${{row.fecha || ''}}</td><td>${{row.donante || ''}}</td><td>${{fmt(row.monto)}}</td>`
-      : `<td>${{row.fecha || ''}}</td><td>${{fmt(row.monto)}}</td>`;
-    tbody.appendChild(tr);
-  }});
-}}
-
-document.getElementById('btnVolver').addEventListener('click', () => {{
-  document.getElementById('vistaDetalle').style.display = 'none';
-  document.getElementById('vistaPrincipal').style.display = 'block';
-}});
-
-selector.addEventListener('change', () => renderAnio(selector.value));
-document.querySelectorAll('input[name="tipoMensual"]').forEach(r => {{
-  r.addEventListener('change', (e) => renderMensual(e.target.value));
-}});
-
-if (DATA.anios.length > 0) {{
-  selector.value = DATA.anios[0];
-  renderAnio(DATA.anios[0]);
-  renderMensual('ingresos');
-}}
-</script>
-</body>
-</html>
-"""
-    return html
-
-
-if __name__ == "__main__":
-    main()
+    
