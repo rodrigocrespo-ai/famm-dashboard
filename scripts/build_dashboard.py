@@ -59,6 +59,7 @@ EGRESOS_COLUMNAS = {
     "proyecto": "PROYECTO",
     "tema": "TEMA",
     "programa": "PROGRAMA",
+    "concepto": "ACTIVIDAD / CONCEPTO",
     "fecha": "Fecha de Pago",
     "total": "Total",
     "status": "Status",
@@ -86,6 +87,32 @@ TARJETAS_LABEL = {
     "proyectos": "Proyectos",
     "rendimientos": "Rendimientos",
 }
+
+CONCEPTO_CATEGORIAS = [
+    "Sueldos y salarios",
+    "Evento Diálogos con el Agua / Asamblea",
+    "Estudios y documentos técnicos",
+    "Oficina/operación",
+    "Adquisición de equipos",
+    "Otros",
+]
+
+
+def clasificar_concepto(texto):
+    t = str(texto or "").lower()
+    if "sueldo" in t or "salario" in t or "nómina" in t or "nomina" in t:
+        return "Sueldos y salarios"
+    if "equipo de cómputo" in t or "equipo de computo" in t or "papeler" in t or "cuaderno" in t:
+        return "Oficina/operación"
+    if "libro blanco" in t or "análisis de propuestas" in t or "analisis de propuestas" in t or "estudio" in t:
+        return "Estudios y documentos técnicos"
+    if any(kw in t for kw in ["evento", "asamblea", "diálogo", "dialogo", "hotel", "audiovisual",
+                                "montaje", "roll up", "roll-up", "disco duro", "desplegado",
+                                "publicación", "publicacion", "convocatoria", "quinta real", "producción", "produccion"]):
+        return "Evento Diálogos con el Agua / Asamblea"
+    if "equipo" in t or "adquisición" in t or "adquisicion" in t:
+        return "Adquisición de equipos"
+    return "Otros"
 
 
 def get_drive_service():
@@ -222,6 +249,7 @@ def main():
     hoy = datetime.datetime.now()
 
     gastos_por_proyecto_anio = {}
+    conceptos_por_proyecto_anio = {}
     ingresos_por_categoria_anio = {}
     monthly_ingresos = {}
     monthly_gastos = {}
@@ -239,6 +267,15 @@ def main():
             proyecto = str(f.get("proyecto") or "Sin clasificar").strip() or "Sin clasificar"
             totales_proyecto[proyecto] = totales_proyecto.get(proyecto, 0.0) + f["monto"]
         gastos_por_proyecto_anio[anio] = agrupar_otros_mas_chico(totales_proyecto)
+
+        # Desglose por concepto, para cada proyecto (para la grafica de pay en el detalle)
+        conceptos_por_proyecto = {}
+        for f in egresos_anio:
+            proyecto = str(f.get("proyecto") or "Sin clasificar").strip() or "Sin clasificar"
+            categoria = clasificar_concepto(f.get("concepto"))
+            conceptos_por_proyecto.setdefault(proyecto, {})
+            conceptos_por_proyecto[proyecto][categoria] = conceptos_por_proyecto[proyecto].get(categoria, 0.0) + f["monto"]
+        conceptos_por_proyecto_anio[anio] = conceptos_por_proyecto
 
         meses_gastos = [0.0] * 12
         for f in egresos_anio:
@@ -296,6 +333,7 @@ def main():
     data_js = {
         "anios": anios,
         "gastos_por_proyecto": gastos_por_proyecto_anio,
+        "conceptos_por_proyecto": conceptos_por_proyecto_anio,
         "ingresos_por_categoria": ingresos_por_categoria_anio,
         "cards": cards_anio,
         "cards_labels": TARJETAS_LABEL,
@@ -424,6 +462,10 @@ def generar_html(data, fecha_actualizacion):
     </div>
   </div>
   <p id="detalleGastoResumen" style="font-size:15px;"></p>
+  <div class="chart-box full" style="margin-top:16px;">
+    <h3>Gasto por concepto</h3>
+    <canvas id="detalleGastoPie" style="max-height: 320px;"></canvas>
+  </div>
 </div>
 
 <script>
@@ -463,7 +505,7 @@ DATA.anios.forEach((a, i) => {{
   aniosCheckBox.appendChild(label);
 }});
 
-let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart;
+let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart, detalleGastoPieChart;
 let tipoMensualActual = 'ingresos';
 
 function renderAnio(anio) {{
@@ -620,6 +662,30 @@ function mostrarDetalleGasto(proyecto, anio) {{
     pctBox.textContent = 'N/D';
     resumen.textContent = 'Gasto ejercido: ' + fmt(ejercido) + '. Presupuesto aprobado: aun no capturado para este proyecto.';
   }}
+
+  const conceptos = (DATA.conceptos_por_proyecto[anio] && DATA.conceptos_por_proyecto[anio][proyecto]) || {{}};
+  if (detalleGastoPieChart) detalleGastoPieChart.destroy();
+  detalleGastoPieChart = new Chart(document.getElementById('detalleGastoPie'), {{
+    type: 'pie',
+    data: {{
+      labels: Object.keys(conceptos),
+      datasets: [{{ data: Object.values(conceptos), backgroundColor: coloresLinea }}]
+    }},
+    options: {{
+      plugins: {{
+        legend: {{ display: true, position: 'right' }},
+        tooltip: {{
+          callbacks: {{
+            label: (ctx) => {{
+              const total = ctx.dataset.data.reduce((a,b) => a+b, 0);
+              const pct = (ctx.parsed / total * 100).toFixed(1);
+              return ctx.label + ': ' + fmt(ctx.parsed) + ' (' + pct + '%)';
+            }}
+          }}
+        }}
+      }}
+    }}
+  }});
 }}
 
 document.getElementById('btnVolverGasto').addEventListener('click', () => {{
