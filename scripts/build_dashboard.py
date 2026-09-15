@@ -90,10 +90,11 @@ TARJETAS_LABEL = {
 
 CONCEPTO_CATEGORIAS = [
     "Sueldos y salarios",
-    "Evento Diálogos con el Agua / Asamblea",
-    "Estudios y documentos técnicos",
-    "Oficina/operación",
     "Insumos",
+    "Implementadores",
+    "Servicios profesionales",
+    "Estudios técnicos",
+    "Evento/Asamblea",
     "Adquisición de equipos",
     "Otros",
 ]
@@ -101,18 +102,24 @@ CONCEPTO_CATEGORIAS = [
 
 def clasificar_concepto(texto):
     t = str(texto or "").lower()
-    if "sueldo" in t or "salario" in t or "nómina" in t or "nomina" in t:
+    if "sueldo" in t or "salario" in t or "nómina" in t or "nomina" in t or "bono de productividad" in t:
         return "Sueldos y salarios"
-    if "equipo de cómputo" in t or "equipo de computo" in t or "papeler" in t or "cuaderno" in t:
-        return "Oficina/operación"
-    if "insumo" in t or "material" in t or "consumible" in t:
+    if any(kw in t for kw in ["biocostal", "insumo", "material", "consumible", "semilla",
+                                "charola", "terrapod", "árbol", "arbol", "planta de"]):
         return "Insumos"
-    if "libro blanco" in t or "análisis de propuestas" in t or "analisis de propuestas" in t or "estudio" in t:
-        return "Estudios y documentos técnicos"
+    if any(kw in t for kw in ["servicio", "honorario", "consultor", "asesor", "análisis de propuestas",
+                                "analisis de propuestas", "evaluación", "evaluacion"]):
+        return "Servicios profesionales"
+    if any(kw in t for kw in ["hectárea", "hectarea", " ha.", "obras de reforestación", "obras de reforestacion",
+                                "obras de suelos", "plantación", "plantacion", "mantenimiento", "implementación", "implementacion"]):
+        return "Implementadores"
+    if any(kw in t for kw in ["libro blanco", "estudio", "análisis de política", "analisis de politica",
+                                "análisis de zonas", "analisis de zonas"]):
+        return "Estudios técnicos"
     if any(kw in t for kw in ["evento", "asamblea", "diálogo", "dialogo", "hotel", "audiovisual",
                                 "montaje", "roll up", "roll-up", "disco duro", "desplegado",
                                 "publicación", "publicacion", "convocatoria", "quinta real", "producción", "produccion"]):
-        return "Evento Diálogos con el Agua / Asamblea"
+        return "Evento/Asamblea"
     if "equipo" in t or "adquisición" in t or "adquisicion" in t:
         return "Adquisición de equipos"
     return "Otros"
@@ -369,6 +376,7 @@ def generar_html(data, fecha_actualizacion):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <style>
   body {{ font-family: -apple-system, Segoe UI, Arial, sans-serif; margin: 0; padding: 24px;
          background: #f5f6f7; color: #1a1a1a; }}
@@ -479,11 +487,13 @@ Chart.defaults.color = '#1a1a1a';
 Chart.defaults.borderColor = '#e3e3e3';
 Chart.defaults.plugins.legend.labels.usePointStyle = false;
 Chart.defaults.plugins.legend.labels.boxWidth = 14;
+Chart.register(ChartDataLabels);
+Chart.defaults.set('plugins.datalabels', {{ display: false }});  // solo se activa donde se pida explicitamente
 
 
 const ECONOMIST_ROJO = '#e3120b';
 const ECONOMIST_AZUL = '#006ba2';
-const coloresLinea = ['#e3120b', '#01295f', '#f2909a', '#8fbfe0', '#758d99', '#a2b1b8', '#4d5b61'];
+const coloresLinea = ['#e3120b', '#01295f', '#f2909a', '#8fbfe0', '#758d99', '#a2b1b8', '#4d5b61', '#7b3014'];
 
 function fmt(n) {{
   return '$' + n.toLocaleString('es-MX', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
@@ -684,6 +694,18 @@ function mostrarDetalleGasto(proyecto, anio) {{
               const pct = (ctx.parsed / total * 100).toFixed(1);
               return ctx.label + ': ' + fmt(ctx.parsed) + ' (' + pct + '%)';
             }}
+          }}
+        }},
+        datalabels: {{
+          display: true,
+          color: '#fff',
+          textStrokeColor: '#000',
+          textStrokeWidth: 2,
+          font: {{ weight: 'bold', size: 13 }},
+          formatter: (value, ctx) => {{
+            const total = ctx.dataset.data.reduce((a,b) => a+b, 0);
+            const pct = total ? (value / total * 100) : 0;
+            return pct.toFixed(0) + '%';
           }}
         }}
       }}
