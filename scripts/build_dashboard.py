@@ -447,13 +447,14 @@ def generar_html(data, fecha_actualizacion):
 
   <div class="charts">
     <div class="chart-box full" id="chartMensualBox">
-      <h3>Comparativo mensual</h3>
+      <h3>Comparativo mensual por año</h3>
       <div class="anios-check" id="aniosCheck"></div>
       <div style="margin-bottom:8px;">
         <label><input type="radio" name="tipoMensual" value="ingresos" checked> Ingresos</label>
         <label style="margin-left:16px;"><input type="radio" name="tipoMensual" value="gastos"> Gastos</label>
       </div>
       <canvas id="mensualChart"></canvas>
+      <div id="totalesMensual" style="margin-top:8px;"></div>
     </div>
   </div>
 
@@ -575,10 +576,17 @@ function renderTotalesAnio(containerId, fuentePorAnio, claseCss) {{
     const valores = fuentePorAnio[anio] || [];
     const total = valores.reduce((a, b) => a + (b || 0), 0);
     const etiqueta = (anio === anioActualStr) ? ('Total acumulado ' + anio) : ('Total ' + anio);
-    const p = document.createElement('div');
-    p.style.cssText = 'font-size:13px;color:#444;margin-top:2px;';
-    p.textContent = etiqueta + ': ' + fmt(total);
-    cont.appendChild(p);
+    const i = DATA.anios.map(String).indexOf(anio);
+    const color = coloresLinea[i % coloresLinea.length];
+    const fila = document.createElement('div');
+    fila.style.cssText = 'display:flex; justify-content:space-between; max-width:320px; font-size:16px; font-weight:600; margin-top:4px; color:' + color + ';';
+    const spanLabel = document.createElement('span');
+    spanLabel.textContent = etiqueta + ':';
+    const spanValor = document.createElement('span');
+    spanValor.textContent = fmt(total);
+    fila.appendChild(spanLabel);
+    fila.appendChild(spanValor);
+    cont.appendChild(fila);
   }});
 }}
 
@@ -660,6 +668,7 @@ function renderMensual(tipo) {{
     data: {{ labels: DATA.meses_es, datasets: datasets }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
+  renderTotalesAnio('totalesMensual', fuente, 'anioCheck');
 }}
 
 function renderTarjetaCompensaciones() {{
