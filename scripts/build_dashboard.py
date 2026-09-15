@@ -99,6 +99,19 @@ CONCEPTO_CATEGORIAS = [
     "Otros",
 ]
 
+# Color fijo por categoria (paleta Economist) -- para que cada concepto
+# tenga siempre el MISMO color en cualquier proyecto, no por posicion.
+CONCEPTO_COLORES = {
+    "Sueldos y salarios": "#e3120b",
+    "Insumos": "#01295f",
+    "Implementadores": "#f2909a",
+    "Servicios profesionales": "#8fbfe0",
+    "Estudios técnicos": "#758d99",
+    "Evento/Asamblea": "#a2b1b8",
+    "Adquisición de equipos": "#4d5b61",
+    "Otros": "#7b3014",
+}
+
 
 def clasificar_concepto(texto):
     t = str(texto or "").lower()
@@ -352,6 +365,7 @@ def main():
         "monthly_por_card": monthly_por_card,
         "detalle_por_card": detalle_por_card,
         "meses_es": MESES_ES,
+        "concepto_colores": CONCEPTO_COLORES,
         "presupuestos": PRESUPUESTOS,
     }
 
@@ -677,12 +691,13 @@ function mostrarDetalleGasto(proyecto, anio) {{
   }}
 
   const conceptos = (DATA.conceptos_por_proyecto[anio] && DATA.conceptos_por_proyecto[anio][proyecto]) || {{}};
+  const coloresPorConcepto = Object.keys(conceptos).map(k => DATA.concepto_colores[k] || '#a2b1b8');
   if (detalleGastoPieChart) detalleGastoPieChart.destroy();
   detalleGastoPieChart = new Chart(document.getElementById('detalleGastoPie'), {{
     type: 'pie',
     data: {{
       labels: Object.keys(conceptos),
-      datasets: [{{ data: Object.values(conceptos), backgroundColor: coloresLinea }}]
+      datasets: [{{ data: Object.values(conceptos), backgroundColor: coloresPorConcepto }}]
     }},
     options: {{
       plugins: {{
@@ -697,7 +712,11 @@ function mostrarDetalleGasto(proyecto, anio) {{
           }}
         }},
         datalabels: {{
-          display: true,
+          display: (ctx) => {{
+            const total = ctx.dataset.data.reduce((a,b) => a+b, 0);
+            const pct = total ? (ctx.dataset.data[ctx.dataIndex] / total * 100) : 0;
+            return pct >= 5;
+          }},
           color: '#fff',
           textStrokeColor: '#000',
           textStrokeWidth: 2,
