@@ -474,16 +474,13 @@ function renderMensual(tipo) {{
       return {{
         label: String(anio),
         data: fuente[anio] || Array(12).fill(null),
-        borderColor: coloresLinea[i % coloresLinea.length],
-        backgroundColor: 'transparent',
-        spanGaps: false,
-        tension: 0.2
+        backgroundColor: coloresLinea[i % coloresLinea.length]
       }};
     }});
 
   if (mensualChart) mensualChart.destroy();
   mensualChart = new Chart(document.getElementById('mensualChart'), {{
-    type: 'line',
+    type: 'bar',
     data: {{ labels: DATA.meses_es, datasets: datasets }},
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
