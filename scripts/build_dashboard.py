@@ -459,20 +459,27 @@ def generar_html(data, fecha_actualizacion):
   </div>
 
   <div class="charts">
+    <div class="chart-box">
+      <h3>Ingresos por categoría</h3>
+      <canvas id="ingresosChart"></canvas>
+    </div>
     <div class="chart-box" style="min-width: 300px;">
-      <h3>Compensaciones por mes</h3>
+      <h3>Ingresos de compensaciones por mes</h3>
       <div class="anios-check" id="aniosCheckComp"></div>
       <canvas id="mensualCompensacionesChart"></canvas>
       <div id="totalesComp" style="margin-top:8px;"></div>
     </div>
+  </div>
+
+  <div class="charts">
     <div class="chart-box" style="min-width: 300px;">
-      <h3>Cuotas de socios (Asociados) por mes</h3>
+      <h3>Ingresos por cuotas de socios</h3>
       <div class="anios-check" id="aniosCheckAsoc"></div>
       <canvas id="mensualAsociadosChart"></canvas>
       <div id="totalesAsoc" style="margin-top:8px;"></div>
     </div>
     <div class="chart-box" style="min-width: 300px;">
-      <h3>Proyectos por mes</h3>
+      <h3>Ingresos por proyectos</h3>
       <div class="anios-check" id="aniosCheckProy"></div>
       <canvas id="mensualProyectosChart"></canvas>
       <div id="totalesProy" style="margin-top:8px;"></div>
@@ -480,13 +487,9 @@ def generar_html(data, fecha_actualizacion):
   </div>
 
   <div class="charts">
-    <div class="chart-box">
+    <div class="chart-box full">
       <h3>Gastos por proyecto</h3>
       <canvas id="gastosChart"></canvas>
-    </div>
-    <div class="chart-box">
-      <h3>Ingresos por categoría</h3>
-      <canvas id="ingresosChart"></canvas>
     </div>
   </div>
 </div>
