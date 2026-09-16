@@ -238,11 +238,12 @@ def agrupar_otros_mas_chico(totales):
     return dict(sorted(resultado.items(), key=lambda x: x[1], reverse=True))
 
 
-def clasificar_tarjeta(cat_raw):
-    """Distintos años usan distinta redaccion para la misma categoria
-    (ej. 2026 dice 'Compensación', 2025 dice 'Compensaciones ambientales').
-    Por eso se compara por palabra clave, no por texto exacto."""
-    t = str(cat_raw or "").strip().lower()
+def clasificar_tarjeta(texto_combinado):
+    """Recibe la union en minusculas de Programa/Proyecto + Tipo de Ingreso +
+    Fuente de Ingreso -- algunos años (2022-2024) traen 'Programa/Proyecto'
+    vacio o 'N/A' para filas de Rendimientos, y la palabra real solo aparece
+    en Tipo/Fuente de Ingreso."""
+    t = texto_combinado
     if "compensaci" in t:
         return "compensaciones"
     if "rendimiento" in t:
@@ -272,8 +273,14 @@ def main():
         egresos_raw.extend(extraer_filtrado(wb[SHEET_EGRESOS], EGRESOS_COLUMNAS))
         ingresos_raw.extend(extraer_filtrado(wb[SHEET_INGRESOS], INGRESOS_COLUMNAS))
 
-    egresos = [f for f in egresos_raw if str(f.get("tema", "")).strip() != TEMA_TRASPASO]
-    ingresos = [f for f in ingresos_raw if str(f.get("tipo", "")).strip() != TIPO_INGRESO_TRASPASO]
+    # "Traspaso entre cuentas" viene con mayusculas/minusculas inconsistentes
+    # segun el año (ej. 'traspaso entre cuentas', 'TRaspaso entre cuentas').
+    # 2022 ademas no tiene columna TEMA -- el codigo de traspaso vive en PROYECTO.
+    egresos = [f for f in egresos_raw
+               if "traspaso" not in (str(f.get("tema", "")) + " " + str(f.get("proyecto", ""))).lower()]
+    ingresos = [f for f in ingresos_raw
+                if "traspaso" not in (str(f.get("tipo", "")) + " " + str(f.get("fuente", "")) + " "
+                                       + str(f.get("programa_proyecto", ""))).lower()]
 
     anios = sorted({f["anio"] for f in egresos + ingresos if f["anio"]}, reverse=True)
     hoy = datetime.datetime.now()
@@ -317,10 +324,14 @@ def main():
         ingresos_validos = []
         for f in ingresos_anio:
             cat_raw = str(f.get("programa_proyecto") or "").strip()
-            if cat_raw == PROGRAMA_TRASPASO or cat_raw == "":
+            tipo_raw = str(f.get("tipo") or "").strip()
+            fuente_raw = str(f.get("fuente") or "").strip()
+            texto_combinado = f"{cat_raw} {tipo_raw} {fuente_raw}".lower()
+            if "traspaso" in texto_combinado or cat_raw == "":
                 continue
-            f["_categoria_raw"] = cat_raw
-            f["_tarjeta"] = clasificar_tarjeta(cat_raw)
+            # Si Programa/Proyecto viene "N/A", usa Tipo de Ingreso como etiqueta
+            f["_categoria_raw"] = cat_raw if cat_raw.upper() != "N/A" else (tipo_raw or "Sin clasificar")
+            f["_tarjeta"] = clasificar_tarjeta(texto_combinado)
             ingresos_validos.append(f)
 
         # Ingresos por categoria (para la grafica de barras: Compensaciones/Rendimientos/proyecto)
@@ -461,6 +472,7 @@ def generar_html(data, fecha_actualizacion):
   <div class="charts">
     <div class="chart-box">
       <h3>Ingresos por categoría</h3>
+      <div class="anios-check" id="aniosCheckCat"></div>
       <canvas id="ingresosChart"></canvas>
     </div>
     <div class="chart-box" style="min-width: 300px;">
@@ -594,6 +606,7 @@ function renderTotalesAnio(containerId, fuentePorAnio, claseCss) {{
 }}
 
 crearCheckboxesAnio('aniosCheck', 'anioCheck', () => renderMensual(tipoMensualActual));
+crearCheckboxesAnio('aniosCheckCat', 'anioCheckCat', () => renderIngresosCategoria());
 crearCheckboxesAnio('aniosCheckComp', 'anioCheckComp', () => renderTarjetaCompensaciones());
 crearCheckboxesAnio('aniosCheckAsoc', 'anioCheckAsoc', () => renderTarjetaAsociados());
 crearCheckboxesAnio('aniosCheckProy', 'anioCheckProy', () => renderTarjetaProyectos());
@@ -637,13 +650,6 @@ function renderAnio(anio) {{
     }}
   }});
   document.getElementById('gastosChart').style.cursor = 'pointer';
-
-  if (ingresosChart) ingresosChart.destroy();
-  ingresosChart = new Chart(document.getElementById('ingresosChart'), {{
-    type: 'bar',
-    data: {{ labels: Object.keys(ingresos), datasets: [{{ label: 'Ingreso (MXN)', data: Object.values(ingresos), backgroundColor: '#01295f' }}] }},
-    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: false }} }} }}
-  }});
 }}
 
 function construirDatasetsMultiAnio(fuentePorAnio, claseCss) {{
@@ -672,6 +678,48 @@ function renderMensual(tipo) {{
     options: {{ plugins: {{ legend: {{ display: true }} }} }}
   }});
   renderTotalesAnio('totalesMensual', fuente, 'anioCheck');
+}}
+
+function renderIngresosCategoria() {{
+  const aniosActivos = aniosActivosDe('anioCheckCat');
+  const porAnio = DATA.ingresos_por_categoria;
+
+  const totalPorCategoria = {{}};
+  aniosActivos.forEach(anio => {{
+    const datos = porAnio[anio] || {{}};
+    Object.keys(datos).forEach(cat => {{
+      totalPorCategoria[cat] = (totalPorCategoria[cat] || 0) + datos[cat];
+    }});
+  }});
+
+  const categorias = Object.keys(totalPorCategoria).sort((a, b) => totalPorCategoria[b] - totalPorCategoria[a]);
+  const TOP_N = 12;
+  let categoriasFinal = categorias;
+  let categoriasOtros = [];
+  if (categorias.length > TOP_N) {{
+    categoriasFinal = categorias.slice(0, TOP_N);
+    categoriasOtros = categorias.slice(TOP_N);
+    categoriasFinal = categoriasFinal.concat(['Otros']);
+  }}
+
+  const datasets = aniosActivos.map(anio => {{
+    const i = DATA.anios.map(String).indexOf(anio);
+    const datos = porAnio[anio] || {{}};
+    const valores = categoriasFinal.map(cat => {{
+      if (cat === 'Otros') {{
+        return categoriasOtros.reduce((suma, c) => suma + (datos[c] || 0), 0);
+      }}
+      return datos[cat] || 0;
+    }});
+    return {{ label: String(anio), data: valores, backgroundColor: coloresLinea[i % coloresLinea.length] }};
+  }});
+
+  if (ingresosChart) ingresosChart.destroy();
+  ingresosChart = new Chart(document.getElementById('ingresosChart'), {{
+    type: 'bar',
+    data: {{ labels: categoriasFinal, datasets: datasets }},
+    options: {{ indexAxis: 'y', plugins: {{ legend: {{ display: true }} }} }}
+  }});
 }}
 
 function renderTarjetaCompensaciones() {{
@@ -847,6 +895,7 @@ if (DATA.anios.length > 0) {{
   selector.value = DATA.anios[0];
   renderAnio(DATA.anios[0]);
   renderMensual('ingresos');
+  renderIngresosCategoria();
   renderTarjetaCompensaciones();
   renderTarjetaAsociados();
   renderTarjetaProyectos();
