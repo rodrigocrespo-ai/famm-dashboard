@@ -89,6 +89,12 @@ TARJETAS_LABEL = {
     "rendimientos": "Rendimientos",
 }
 
+# Años donde "Programa / Proyecto" viene tan vacío en el Excel que la
+# clasificación por categoría (Compensaciones/Asociados/Proyectos/Rendimientos)
+# no es confiable. El total general SI se muestra para estos años; solo se
+# omite el desglose por categoría hasta que se revise el archivo a detalle.
+ANIOS_SIN_CATEGORIA_CONFIABLE = {2022, 2023}
+
 CONCEPTO_CATEGORIAS = [
     "Sueldos y salarios",
     "Insumos",
@@ -335,11 +341,13 @@ def main():
             ingresos_validos.append(f)
 
         # Ingresos por categoria (para la grafica de barras: Compensaciones/Rendimientos/proyecto)
-        totales_categoria = {}
-        for f in ingresos_validos:
-            label = "Compensaciones" if "compensaci" in f["_categoria_raw"].lower() else f["_categoria_raw"]
-            totales_categoria[label] = totales_categoria.get(label, 0.0) + f["monto"]
-        ingresos_por_categoria_anio[anio] = dict(sorted(totales_categoria.items(), key=lambda x: x[1], reverse=True))
+        # -- se omite en años donde la etiqueta no es confiable (ver ANIOS_SIN_CATEGORIA_CONFIABLE)
+        if anio not in ANIOS_SIN_CATEGORIA_CONFIABLE:
+            totales_categoria = {}
+            for f in ingresos_validos:
+                label = "Compensaciones" if "compensaci" in f["_categoria_raw"].lower() else f["_categoria_raw"]
+                totales_categoria[label] = totales_categoria.get(label, 0.0) + f["monto"]
+            ingresos_por_categoria_anio[anio] = dict(sorted(totales_categoria.items(), key=lambda x: x[1], reverse=True))
 
         meses_ingresos = [0.0] * 12
         for f in ingresos_validos:
@@ -348,6 +356,9 @@ def main():
         monthly_ingresos[anio] = truncar_futuro(meses_ingresos, anio, hoy)
 
         # 4 tarjetas: totales, mensual, y detalle de transacciones
+        # -- se omite en años donde la etiqueta no es confiable
+        if anio in ANIOS_SIN_CATEGORIA_CONFIABLE:
+            continue
         cards_anio[anio] = {}
         for tarjeta in TARJETAS:
             filas_tarjeta = [f for f in ingresos_validos if f["_tarjeta"] == tarjeta]
@@ -383,6 +394,7 @@ def main():
         "monthly_por_card": monthly_por_card,
         "detalle_por_card": detalle_por_card,
         "meses_es": MESES_ES,
+        "anios_sin_categoria": sorted(ANIOS_SIN_CATEGORIA_CONFIABLE),
         "concepto_colores": CONCEPTO_COLORES,
         "presupuestos": PRESUPUESTOS,
     }
@@ -564,9 +576,11 @@ DATA.anios.forEach(a => {{
   selector.appendChild(opt);
 }});
 
-function crearCheckboxesAnio(containerId, claseCss, onChange) {{
+function crearCheckboxesAnio(containerId, claseCss, onChange, aniosExcluir) {{
+  aniosExcluir = aniosExcluir || [];
   const cont = document.getElementById(containerId);
   DATA.anios.forEach((a, i) => {{
+    if (aniosExcluir.includes(a)) return;
     const label = document.createElement('label');
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.checked = true; cb.value = a; cb.className = claseCss;
@@ -606,10 +620,10 @@ function renderTotalesAnio(containerId, fuentePorAnio, claseCss) {{
 }}
 
 crearCheckboxesAnio('aniosCheck', 'anioCheck', () => renderMensual(tipoMensualActual));
-crearCheckboxesAnio('aniosCheckCat', 'anioCheckCat', () => renderIngresosCategoria());
-crearCheckboxesAnio('aniosCheckComp', 'anioCheckComp', () => renderTarjetaCompensaciones());
-crearCheckboxesAnio('aniosCheckAsoc', 'anioCheckAsoc', () => renderTarjetaAsociados());
-crearCheckboxesAnio('aniosCheckProy', 'anioCheckProy', () => renderTarjetaProyectos());
+crearCheckboxesAnio('aniosCheckCat', 'anioCheckCat', () => renderIngresosCategoria(), DATA.anios_sin_categoria);
+crearCheckboxesAnio('aniosCheckComp', 'anioCheckComp', () => renderTarjetaCompensaciones(), DATA.anios_sin_categoria);
+crearCheckboxesAnio('aniosCheckAsoc', 'anioCheckAsoc', () => renderTarjetaAsociados(), DATA.anios_sin_categoria);
+crearCheckboxesAnio('aniosCheckProy', 'anioCheckProy', () => renderTarjetaProyectos(), DATA.anios_sin_categoria);
 
 let gastosChart, ingresosChart, mensualChart, detalleChart, detalleGastoChart, detalleGastoPieChart;
 let mensualCompensacionesChart, mensualAsociadosChart, mensualProyectosChart;
@@ -617,9 +631,8 @@ let tipoMensualActual = 'ingresos';
 
 function renderAnio(anio) {{
   const gastos = DATA.gastos_por_proyecto[anio] || {{}};
-  const ingresos = DATA.ingresos_por_categoria[anio] || {{}};
   const totalGastos = Object.values(gastos).reduce((a,b) => a+b, 0);
-  const totalIngresos = Object.values(ingresos).reduce((a,b) => a+b, 0);
+  const totalIngresos = (DATA.monthly_ingresos[anio] || []).reduce((a,b) => a + (b || 0), 0);
 
   document.getElementById('valIngresos').textContent = fmt(totalIngresos);
   document.getElementById('valGastos').textContent = fmt(totalGastos);
@@ -627,14 +640,21 @@ function renderAnio(anio) {{
 
   const cont = document.getElementById('tarjetasIngreso');
   cont.innerHTML = '';
-  const cardsAnio = DATA.cards[anio] || {{}};
-  Object.keys(DATA.cards_labels).forEach(key => {{
-    const div = document.createElement('div');
-    div.className = 'card clicable';
-    div.innerHTML = `<div class="label">Ingresos: ${{DATA.cards_labels[key]}}</div><div class="valor">${{fmt(cardsAnio[key] || 0)}}</div>`;
-    div.addEventListener('click', () => mostrarDetalle(key, anio));
-    cont.appendChild(div);
-  }});
+  if (DATA.anios_sin_categoria.map(String).includes(String(anio))) {{
+    const aviso = document.createElement('div');
+    aviso.style.cssText = 'font-size:14px; color:#666; font-style:italic;';
+    aviso.textContent = 'El desglose por categoría (Compensaciones/Asociados/Proyectos/Rendimientos) no está disponible para ' + anio + ' -- el archivo original no trae esa etiqueta de forma confiable.';
+    cont.appendChild(aviso);
+  }} else {{
+    const cardsAnio = DATA.cards[anio] || {{}};
+    Object.keys(DATA.cards_labels).forEach(key => {{
+      const div = document.createElement('div');
+      div.className = 'card clicable';
+      div.innerHTML = `<div class="label">Ingresos: ${{DATA.cards_labels[key]}}</div><div class="valor">${{fmt(cardsAnio[key] || 0)}}</div>`;
+      div.addEventListener('click', () => mostrarDetalle(key, anio));
+      cont.appendChild(div);
+    }});
+  }}
 
   if (gastosChart) gastosChart.destroy();
   gastosChart = new Chart(document.getElementById('gastosChart'), {{
@@ -884,6 +904,23 @@ function mostrarDetalleGasto(proyecto, anio) {{
 document.getElementById('btnVolverGasto').addEventListener('click', () => {{
   document.getElementById('vistaDetalleGasto').style.display = 'none';
   document.getElementById('vistaPrincipal').style.display = 'block';
+}});
+
+// Permite hacer clic en el NOMBRE del proyecto (eje Y), no solo en la barra --
+// util cuando la barra es muy chica para darle clic con precision.
+document.getElementById('gastosChart').addEventListener('click', (evt) => {{
+  if (!gastosChart) return;
+  const rect = evt.target.getBoundingClientRect();
+  const clickX = evt.clientX - rect.left;
+  const clickY = evt.clientY - rect.top;
+  const area = gastosChart.chartArea;
+  if (clickX < area.left) {{
+    const index = Math.round(gastosChart.scales.y.getValueForPixel(clickY));
+    const proyecto = gastosChart.data.labels[index];
+    if (proyecto !== undefined) {{
+      mostrarDetalleGasto(proyecto, selector.value);
+    }}
+  }}
 }});
 
 selector.addEventListener('change', () => renderAnio(selector.value));
